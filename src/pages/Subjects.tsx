@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Search, BookOpen, Trash2, Edit3, MoreVertical, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,58 +20,22 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data - você conectará com Firebase
-const mockSubjects = [
-  {
-    id: 1,
-    name: "Matemática",
-    description: "Álgebra, geometria e cálculo",
-    color: "bg-blue-500",
-    tasksCount: 8,
-    completedTasks: 3,
-    teacher: "Prof. Silva"
-  },
-  {
-    id: 2,
-    name: "História",
-    description: "História do Brasil e mundial",
-    color: "bg-green-500",
-    tasksCount: 5,
-    completedTasks: 4,
-    teacher: "Prof. Santos"
-  },
-  {
-    id: 3,
-    name: "Física",
-    description: "Mecânica e eletromagnetismo",
-    color: "bg-purple-500",
-    tasksCount: 6,
-    completedTasks: 2,
-    teacher: "Prof. Costa"
-  },
-  {
-    id: 4,
-    name: "Química",
-    description: "Química orgânica e inorgânica",
-    color: "bg-orange-500",
-    tasksCount: 4,
-    completedTasks: 1,
-    teacher: "Prof. Lima"
-  }
-];
+import { useAuth } from "@/lib/auth";
+import { getSubjects, addSubject, updateSubject, deleteSubject, Subject } from "@/lib/firestore";
 
 const Subjects = () => {
-  const [subjects, setSubjects] = useState(mockSubjects);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingSubject, setEditingSubject] = useState<any>(null);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
     teacher: "",
     color: "bg-blue-500"
   });
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const colors = [
@@ -85,63 +49,105 @@ const Subjects = () => {
     "bg-yellow-500"
   ];
 
+  useEffect(() => {
+    if (user) {
+      loadSubjects();
+    }
+  }, [user]);
+
+  const loadSubjects = async () => {
+    try {
+      const subjectsData = await getSubjects(user!.uid);
+      setSubjects(subjectsData);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar disciplinas",
+        description: error.message || "Não foi possível carregar as disciplinas",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredSubjects = subjects.filter(subject =>
     subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     subject.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (editingSubject) {
-      // Editar disciplina existente
-      setSubjects(prev => prev.map(subject =>
-        subject.id === editingSubject.id
-          ? { ...subject, ...formData }
-          : subject
-      ));
+
+    try {
+      if (editingSubject) {
+        // Editar disciplina existente
+        await updateSubject(editingSubject.id!, {
+          name: formData.name,
+          description: formData.description,
+          teacher: formData.teacher,
+          color: formData.color
+        });
+        toast({
+          title: "Disciplina atualizada!",
+          description: "As alterações foram salvas com sucesso.",
+        });
+      } else {
+        // Criar nova disciplina
+        await addSubject({
+          name: formData.name,
+          description: formData.description,
+          teacher: formData.teacher,
+          color: formData.color,
+          tasksCount: 0,
+          completedTasks: 0,
+          userId: user!.uid
+        });
+        toast({
+          title: "Disciplina criada!",
+          description: "Nova disciplina adicionada com sucesso.",
+        });
+      }
+
+      await loadSubjects(); // Reload subjects
+      setIsDialogOpen(false);
+      setEditingSubject(null);
+      setFormData({ name: "", description: "", teacher: "", color: "bg-blue-500" });
+    } catch (error: any) {
       toast({
-        title: "Disciplina atualizada!",
-        description: "As alterações foram salvas com sucesso.",
-      });
-    } else {
-      // Criar nova disciplina
-      const newSubject = {
-        id: Date.now(),
-        ...formData,
-        tasksCount: 0,
-        completedTasks: 0
-      };
-      setSubjects(prev => [...prev, newSubject]);
-      toast({
-        title: "Disciplina criada!",
-        description: "Nova disciplina adicionada com sucesso.",
+        title: "Erro",
+        description: error.message || "Não foi possível salvar a disciplina",
+        variant: "destructive",
       });
     }
-
-    setIsDialogOpen(false);
-    setEditingSubject(null);
-    setFormData({ name: "", description: "", teacher: "", color: "bg-blue-500" });
   };
 
-  const handleEdit = (subject: any) => {
+  const handleEdit = (subject: Subject) => {
     setEditingSubject(subject);
     setFormData({
       name: subject.name,
       description: subject.description,
-      teacher: subject.teacher,
+      teacher: subject.teacher || "",
       color: subject.color
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (subjectId: number) => {
-    setSubjects(prev => prev.filter(subject => subject.id !== subjectId));
-    toast({
-      title: "Disciplina removida",
-      description: "A disciplina foi removida com sucesso.",
-      variant: "destructive",
-    });
+  const handleDelete = async (subjectId: string) => {
+    try {
+      await deleteSubject(subjectId);
+      await loadSubjects(); // Reload subjects
+      toast({
+        title: "Disciplina removida",
+        description: "A disciplina foi removida com sucesso.",
+        variant: "destructive",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível remover a disciplina",
+        variant: "destructive",
+      });
+    }
   };
 
   const openDialog = () => {
@@ -149,6 +155,14 @@ const Subjects = () => {
     setFormData({ name: "", description: "", teacher: "", color: "bg-blue-500" });
     setIsDialogOpen(true);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -260,7 +274,7 @@ const Subjects = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSubjects.map((subject) => {
             const completionPercentage = subject.tasksCount > 0 ? (subject.completedTasks / subject.tasksCount) * 100 : 0;
-            
+
             return (
               <Card key={subject.id} className="card-elevated group hover:scale-105 transition-all duration-300">
                 <CardHeader className="relative">
@@ -287,8 +301,8 @@ const Subjects = () => {
                           <Edit3 className="w-4 h-4 mr-2" />
                           Editar
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => handleDelete(subject.id)}
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(subject.id!)}
                           className="text-destructive"
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
@@ -308,7 +322,7 @@ const Subjects = () => {
                       <span className="text-sm font-medium">{Math.round(completionPercentage)}%</span>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">
-                      <div 
+                      <div
                         className="bg-gradient-to-r from-secondary to-secondary-light h-2 rounded-full transition-all duration-300"
                         style={{ width: `${completionPercentage}%` }}
                       />

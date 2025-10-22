@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Home, BookOpen, CheckSquare, User, LogOut, GraduationCap } from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 const navigation = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
@@ -28,23 +29,34 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => currentPath === path;
   const isExpanded = navigation.some((item) => isActive(item.url));
 
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
-    isActive 
-      ? "bg-primary text-primary-foreground font-medium hover:bg-primary/90" 
+    isActive
+      ? "bg-primary text-primary-foreground font-medium hover:bg-primary/90"
       : "hover:bg-muted/50 text-muted-foreground hover:text-foreground";
 
-  const handleLogout = () => {
-    toast({
-      title: "Logout realizado",
-      description: "Até logo!",
-    });
-    // Aqui você fará o logout no Firebase
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({
+        title: "Logout realizado",
+        description: "Até logo!",
+      });
+      navigate("/login");
+    } catch (error: any) {
+      toast({
+        title: "Erro no logout",
+        description: error.message || "Não foi possível fazer logout",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -58,7 +70,9 @@ export function AppSidebar() {
             </div>
             <div>
               <h2 className="font-semibold text-sm">StudyOrganizer</h2>
-              <p className="text-xs text-muted-foreground">Organize seus estudos</p>
+              <p className="text-xs text-muted-foreground">
+                {user?.displayName || user?.email || "Usuário"}
+              </p>
             </div>
           </div>
         )}
@@ -80,9 +94,9 @@ export function AppSidebar() {
               {navigation.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink 
-                      to={item.url} 
-                      end 
+                    <NavLink
+                      to={item.url}
+                      end
                       className={getNavCls({ isActive: isActive(item.url) })}
                     >
                       <item.icon className="w-4 h-4" />
@@ -104,8 +118,8 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <NavLink 
-                    to="/profile" 
+                  <NavLink
+                    to="/profile"
                     className={getNavCls({ isActive: isActive("/profile") })}
                   >
                     <User className="w-4 h-4" />

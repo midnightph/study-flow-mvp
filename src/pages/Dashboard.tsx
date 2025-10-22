@@ -1,52 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, Calendar, Clock, CheckCircle2, AlertCircle, BookOpen, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data - você conectará com Firebase
-const mockTasks = [
-  {
-    id: 1,
-    title: "Prova de Matemática",
-    subject: "Matemática",
-    dueDate: new Date("2024-01-20"),
-    priority: "high",
-    completed: false,
-    description: "Capítulos 1-5 do livro"
-  },
-  {
-    id: 2,
-    title: "Trabalho de História",
-    subject: "História",
-    dueDate: new Date("2024-01-25"),
-    priority: "medium",
-    completed: false,
-    description: "Revolução Industrial"
-  },
-  {
-    id: 3,
-    title: "Lista de Exercícios",
-    subject: "Física",
-    dueDate: new Date("2024-01-18"),
-    priority: "low",
-    completed: true,
-    description: "Mecânica clássica"
-  }
-];
-
-const mockStats = {
-  totalTasks: 15,
-  completed: 8,
-  pending: 7,
-  overdue: 2
-};
+import { useAuth } from "@/lib/auth";
+import { getTasks, getSubjects, getUserStats, updateTask, Task, Subject } from "@/lib/firestore";
 
 const Dashboard = () => {
-  const [tasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      loadDashboardData();
+    }
+  }, [user]);
+
+  const loadDashboardData = async () => {
+    try {
+      const [tasksData, subjectsData, statsData] = await Promise.all([
+        getTasks(user!.uid),
+        getSubjects(user!.uid),
+        getUserStats(user!.uid)
+      ]);
+
+      setTasks(tasksData);
+      setSubjects(subjectsData);
+      setStats(statsData);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar dados",
+        description: error.message || "Não foi possível carregar os dados do dashboard",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -63,14 +61,35 @@ const Dashboard = () => {
     return diffDays;
   };
 
-  const markTaskComplete = (taskId: number) => {
-    toast({
-      title: "Tarefa concluída!",
-      description: "Parabéns pelo progresso!",
-    });
+  const markTaskComplete = async (taskId: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        await updateTask(taskId, { completed: !task.completed });
+        await loadDashboardData(); // Reload data
+        toast({
+          title: task.completed ? "Tarefa reaberta" : "Tarefa concluída!",
+          description: task.completed ? "Tarefa marcada como pendente" : "Parabéns pelo progresso!",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar a tarefa",
+        variant: "destructive",
+      });
+    }
   };
 
-  const completionPercentage = (mockStats.completed / mockStats.totalTasks) * 100;
+  const completionPercentage = stats ? (stats.completedTasks / stats.totalTasks) * 100 : 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,13 +99,13 @@ const Dashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-semibold text-gradient mb-2">
-                Olá, Estudante! 👋
+                Olá, {user?.displayName || "Estudante"}! 👋
               </h1>
               <p className="text-muted-foreground">
                 Vamos organizar seus estudos hoje
               </p>
             </div>
-            <Button className="btn-primary">
+            <Button className="btn-primary" onClick={() => navigate('/tasks')}>
               <Plus className="w-4 h-4 mr-2" />
               Nova Tarefa
             </Button>
@@ -102,7 +121,7 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total</p>
-                  <p className="text-2xl font-semibold">{mockStats.totalTasks}</p>
+                  <p className="text-2xl font-semibold">{stats?.totalTasks || 0}</p>
                 </div>
                 <Target className="w-8 h-8 text-primary" />
               </div>
@@ -114,7 +133,7 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Concluídas</p>
-                  <p className="text-2xl font-semibold text-secondary">{mockStats.completed}</p>
+                  <p className="text-2xl font-semibold text-secondary">{stats?.completedTasks || 0}</p>
                 </div>
                 <CheckCircle2 className="w-8 h-8 text-secondary" />
               </div>
@@ -126,7 +145,7 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Pendentes</p>
-                  <p className="text-2xl font-semibold text-warning">{mockStats.pending}</p>
+                  <p className="text-2xl font-semibold text-warning">{stats?.pendingTasks || 0}</p>
                 </div>
                 <Clock className="w-8 h-8 text-warning" />
               </div>
@@ -138,7 +157,7 @@ const Dashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Atrasadas</p>
-                  <p className="text-2xl font-semibold text-destructive">{mockStats.overdue}</p>
+                  <p className="text-2xl font-semibold text-destructive">{stats?.overdueTasks || 0}</p>
                 </div>
                 <AlertCircle className="w-8 h-8 text-destructive" />
               </div>
@@ -157,8 +176,8 @@ const Dashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {tasks.filter(task => !task.completed).map((task) => {
-                  const daysUntil = getDaysUntilDue(task.dueDate);
+                {tasks.filter(task => !task.completed).slice(0, 5).map((task) => {
+                  const daysUntil = getDaysUntilDue(task.dueDate.toDate());
                   return (
                     <div key={task.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
                       <div className="flex-1">
@@ -183,7 +202,7 @@ const Dashboard = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => markTaskComplete(task.id)}
+                        onClick={() => markTaskComplete(task.id!)}
                         className="ml-4"
                       >
                         <CheckCircle2 className="w-4 h-4" />
@@ -191,6 +210,12 @@ const Dashboard = () => {
                     </div>
                   );
                 })}
+                {tasks.filter(task => !task.completed).length === 0 && (
+                  <div className="text-center py-8">
+                    <CheckCircle2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">Nenhuma tarefa pendente</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -211,7 +236,7 @@ const Dashboard = () => {
                     <Progress value={completionPercentage} className="h-2" />
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {mockStats.completed} de {mockStats.totalTasks} tarefas concluídas
+                    {stats?.completedTasks || 0} de {stats?.totalTasks || 0} tarefas concluídas
                   </div>
                 </div>
               </CardContent>
@@ -223,12 +248,15 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {["Matemática", "História", "Física", "Química"].map((subject) => (
-                    <div key={subject} className="flex items-center justify-between">
-                      <span className="text-sm">{subject}</span>
-                      <Badge variant="secondary">3 tarefas</Badge>
+                  {subjects.slice(0, 4).map((subject) => (
+                    <div key={subject.id} className="flex items-center justify-between">
+                      <span className="text-sm">{subject.name}</span>
+                      <Badge variant="secondary">{subject.tasksCount} tarefas</Badge>
                     </div>
                   ))}
+                  {subjects.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Nenhuma disciplina cadastrada</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

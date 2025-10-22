@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, BookOpen, Mail, Lock, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -20,6 +21,8 @@ const Register = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { register } = useAuth();
+  const navigate = useNavigate();
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -27,7 +30,7 @@ const Register = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: "Erro",
@@ -48,15 +51,22 @@ const Register = () => {
 
     setIsLoading(true);
 
-    // Simular cadastro - você conectará com Firebase
-    setTimeout(() => {
+    try {
+      await register(formData.email, formData.password, formData.name);
       toast({
         title: "Conta criada!",
         description: "Bem-vindo ao StudyOrganizer!",
       });
+      navigate("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Erro no cadastro",
+        description: error.message || "Não foi possível criar a conta",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-      // Redirecionar para dashboard
-    }, 2000);
+    }
   };
 
   return (

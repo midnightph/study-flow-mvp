@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, BookOpen, Mail, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -13,28 +14,29 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simular login - você conectará com Firebase
-    setTimeout(() => {
-      if (email && password) {
-        toast({
-          title: "Login realizado!",
-          description: "Bem-vindo de volta!",
-        });
-        // Redirecionar para dashboard
-      } else {
-        toast({
-          title: "Erro no login",
-          description: "Verifique suas credenciais",
-          variant: "destructive",
-        });
-      }
+    try {
+      await login(email, password);
+      toast({
+        title: "Login realizado!",
+        description: "Bem-vindo de volta!",
+      });
+      navigate("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Erro no login",
+        description: error.message || "Verifique suas credenciais",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   return (
@@ -140,7 +142,7 @@ const Login = () => {
         {/* Demo info */}
         <div className="mt-6 text-center">
           <p className="text-xs text-muted-foreground">
-            Esta é uma versão de demonstração. Use qualquer email/senha para testar.
+            Use suas credenciais do Firebase para fazer login.
           </p>
         </div>
       </div>

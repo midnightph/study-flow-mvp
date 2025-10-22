@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Search, Calendar, Clock, CheckCircle2, Circle, Filter, BookOpen, AlertCircle, Edit3, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,71 +22,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data
-const mockTasks = [
-  {
-    id: 1,
-    title: "Prova de Matemática",
-    description: "Estudar capítulos 1-5 do livro de álgebra",
-    subject: "Matemática",
-    subjectId: 1,
-    dueDate: new Date("2024-01-20"),
-    priority: "high",
-    completed: false,
-    createdAt: new Date("2024-01-10")
-  },
-  {
-    id: 2,
-    title: "Trabalho de História",
-    description: "Pesquisa sobre a Revolução Industrial",
-    subject: "História",
-    subjectId: 2,
-    dueDate: new Date("2024-01-25"),
-    priority: "medium",
-    completed: false,
-    createdAt: new Date("2024-01-12")
-  },
-  {
-    id: 3,
-    title: "Lista de Exercícios",
-    description: "Resolver exercícios de mecânica clássica",
-    subject: "Física",
-    subjectId: 3,
-    dueDate: new Date("2024-01-18"),
-    priority: "low",
-    completed: true,
-    createdAt: new Date("2024-01-08")
-  },
-  {
-    id: 4,
-    title: "Relatório de Química",
-    description: "Relatório do experimento de titulação",
-    subject: "Química",
-    subjectId: 4,
-    dueDate: new Date("2024-01-22"),
-    priority: "high",
-    completed: false,
-    createdAt: new Date("2024-01-14")
-  }
-];
-
-const mockSubjects = [
-  { id: 1, name: "Matemática" },
-  { id: 2, name: "História" },
-  { id: 3, name: "Física" },
-  { id: 4, name: "Química" }
-];
+import { useAuth } from "@/lib/auth";
+import { getTasks, getSubjects, addTask, updateTask, deleteTask, Task, Subject } from "@/lib/firestore";
+import { Timestamp } from "firebase/firestore";
 
 const Tasks = () => {
-  const [tasks, setTasks] = useState(mockTasks);
-  const [subjects] = useState(mockSubjects);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -94,13 +43,39 @@ const Tasks = () => {
     dueDate: "",
     priority: "medium"
   });
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (user) {
+      loadData();
+    }
+  }, [user]);
+
+  const loadData = async () => {
+    try {
+      const [tasksData, subjectsData] = await Promise.all([
+        getTasks(user!.uid),
+        getSubjects(user!.uid)
+      ]);
+      setTasks(tasksData);
+      setSubjects(subjectsData);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar dados",
+        description: error.message || "Não foi possível carregar as tarefas",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredTasks = tasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          task.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSubject = selectedSubject === "all" || task.subjectId.toString() === selectedSubject;
-    const matchesStatus = statusFilter === "all" || 
+    const matchesSubject = selectedSubject === "all" || task.subjectId === selectedSubject;
+    const matchesStatus = statusFilter === "all" ||
                          (statusFilter === "completed" && task.completed) ||
                          (statusFilter === "pending" && !task.completed);
     const matchesPriority = priorityFilter === "all" || task.priority === priorityFilter;
@@ -124,93 +99,116 @@ const Tasks = () => {
     }
   };
 
-  const getDaysUntilDue = (dueDate: Date) => {
+  const getDaysUntilDue = (dueDate: Timestamp) => {
     const today = new Date();
-    const diffTime = dueDate.getTime() - today.getTime();
+    const diffTime = dueDate.toDate().getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('pt-BR');
+  const formatDate = (date: Timestamp) => {
+    return date.toDate().toLocaleDateString('pt-BR');
   };
 
-  const toggleTaskCompletion = (taskId: number) => {
-    setTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
-    
-    const task = tasks.find(t => t.id === taskId);
-    toast({
-      title: task?.completed ? "Tarefa reaberta" : "Tarefa concluída!",
-      description: task?.completed ? "Tarefa marcada como pendente" : "Parabéns pelo progresso!",
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const selectedSubjectData = subjects.find(s => s.id.toString() === formData.subjectId);
-    
-    if (editingTask) {
-      // Editar tarefa existente
-      setTasks(prev => prev.map(task =>
-        task.id === editingTask.id
-          ? {
-              ...task,
-              ...formData,
-              subjectId: parseInt(formData.subjectId),
-              subject: selectedSubjectData?.name || "",
-              dueDate: new Date(formData.dueDate)
-            }
-          : task
-      ));
+  const toggleTaskCompletion = async (taskId: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        await updateTask(taskId, { completed: !task.completed });
+        await loadData(); // Reload data
+        toast({
+          title: task.completed ? "Tarefa reaberta" : "Tarefa concluída!",
+          description: task.completed ? "Tarefa marcada como pendente" : "Parabéns pelo progresso!",
+        });
+      }
+    } catch (error: any) {
       toast({
-        title: "Tarefa atualizada!",
-        description: "As alterações foram salvas com sucesso.",
-      });
-    } else {
-      // Criar nova tarefa
-      const newTask = {
-        id: Date.now(),
-        ...formData,
-        subjectId: parseInt(formData.subjectId),
-        subject: selectedSubjectData?.name || "",
-        dueDate: new Date(formData.dueDate),
-        completed: false,
-        createdAt: new Date()
-      };
-      setTasks(prev => [...prev, newTask]);
-      toast({
-        title: "Tarefa criada!",
-        description: "Nova tarefa adicionada com sucesso.",
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar a tarefa",
+        variant: "destructive",
       });
     }
-
-    setIsDialogOpen(false);
-    setEditingTask(null);
-    setFormData({ title: "", description: "", subjectId: "", dueDate: "", priority: "medium" });
   };
 
-  const handleEdit = (task: any) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const selectedSubjectData = subjects.find(s => s.id === formData.subjectId);
+
+    try {
+      if (editingTask) {
+        // Editar tarefa existente
+        await updateTask(editingTask.id!, {
+          title: formData.title,
+          description: formData.description,
+          subjectId: formData.subjectId,
+          subject: selectedSubjectData?.name || "",
+          dueDate: Timestamp.fromDate(new Date(formData.dueDate)),
+          priority: formData.priority as "low" | "medium" | "high"
+        });
+        toast({
+          title: "Tarefa atualizada!",
+          description: "As alterações foram salvas com sucesso.",
+        });
+      } else {
+        // Criar nova tarefa
+        await addTask({
+          title: formData.title,
+          description: formData.description,
+          subject: selectedSubjectData?.name || "",
+          subjectId: formData.subjectId,
+          dueDate: Timestamp.fromDate(new Date(formData.dueDate)),
+          priority: formData.priority as "low" | "medium" | "high",
+          completed: false,
+          userId: user!.uid
+        });
+        toast({
+          title: "Tarefa criada!",
+          description: "Nova tarefa adicionada com sucesso.",
+        });
+      }
+
+      await loadData(); // Reload tasks
+      setIsDialogOpen(false);
+      setEditingTask(null);
+      setFormData({ title: "", description: "", subjectId: "", dueDate: "", priority: "medium" });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível salvar a tarefa",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEdit = (task: Task) => {
     setEditingTask(task);
     setFormData({
       title: task.title,
       description: task.description,
-      subjectId: task.subjectId.toString(),
-      dueDate: task.dueDate.toISOString().split('T')[0],
+      subjectId: task.subjectId,
+      dueDate: task.dueDate.toDate().toISOString().split('T')[0],
       priority: task.priority
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (taskId: number) => {
-    setTasks(prev => prev.filter(task => task.id !== taskId));
-    toast({
-      title: "Tarefa removida",
-      description: "A tarefa foi removida com sucesso.",
-      variant: "destructive",
-    });
+  const handleDelete = async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+      await loadData(); // Reload tasks
+      toast({
+        title: "Tarefa removida",
+        description: "A tarefa foi removida com sucesso.",
+        variant: "destructive",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível remover a tarefa",
+        variant: "destructive",
+      });
+    }
   };
 
   const openDialog = () => {
@@ -218,6 +216,14 @@ const Tasks = () => {
     setFormData({ title: "", description: "", subjectId: "", dueDate: "", priority: "medium" });
     setIsDialogOpen(true);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -276,7 +282,7 @@ const Tasks = () => {
                       </SelectTrigger>
                       <SelectContent>
                         {subjects.map((subject) => (
-                          <SelectItem key={subject.id} value={subject.id.toString()}>
+                          <SelectItem key={subject.id} value={subject.id!}>
                             {subject.name}
                           </SelectItem>
                         ))}
@@ -337,7 +343,7 @@ const Tasks = () => {
               className="pl-10"
             />
           </div>
-          
+
           <Select value={selectedSubject} onValueChange={setSelectedSubject}>
             <SelectTrigger className="w-48">
               <SelectValue />
@@ -345,7 +351,7 @@ const Tasks = () => {
             <SelectContent>
               <SelectItem value="all">Todas as disciplinas</SelectItem>
               {subjects.map((subject) => (
-                <SelectItem key={subject.id} value={subject.id.toString()}>
+                <SelectItem key={subject.id} value={subject.id!}>
                   {subject.name}
                 </SelectItem>
               ))}
@@ -382,7 +388,7 @@ const Tasks = () => {
             const daysUntil = getDaysUntilDue(task.dueDate);
             const isOverdue = daysUntil < 0 && !task.completed;
             const isDueToday = daysUntil === 0 && !task.completed;
-            
+
             return (
               <Card key={task.id} className={`card-elevated transition-all duration-200 ${
                 task.completed ? 'opacity-75' : ''
@@ -391,10 +397,10 @@ const Tasks = () => {
                   <div className="flex items-start gap-4">
                     <Checkbox
                       checked={task.completed}
-                      onCheckedChange={() => toggleTaskCompletion(task.id)}
+                      onCheckedChange={() => toggleTaskCompletion(task.id!)}
                       className="mt-1"
                     />
-                    
+
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-2">
                         <div>
@@ -405,7 +411,7 @@ const Tasks = () => {
                             {task.description}
                           </p>
                         </div>
-                        
+
                         <div className="flex items-center gap-2">
                           <Button
                             variant="ghost"
@@ -417,42 +423,42 @@ const Tasks = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(task.id)}
+                            onClick={() => handleDelete(task.id!)}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-4 text-sm">
                         <div className="flex items-center gap-1">
                           <BookOpen className="w-4 h-4 text-muted-foreground" />
                           <span>{task.subject}</span>
                         </div>
-                        
+
                         <div className="flex items-center gap-1">
                           <Calendar className="w-4 h-4 text-muted-foreground" />
                           <span>{formatDate(task.dueDate)}</span>
                         </div>
-                        
+
                         <Badge variant={getPriorityColor(task.priority) as any}>
                           {getPriorityLabel(task.priority)}
                         </Badge>
-                        
+
                         {isOverdue && (
                           <Badge variant="destructive" className="flex items-center gap-1">
                             <AlertCircle className="w-3 h-3" />
                             Atrasado
                           </Badge>
                         )}
-                        
+
                         {isDueToday && (
                           <Badge variant="destructive" className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             Vence hoje
                           </Badge>
                         )}
-                        
+
                         {daysUntil > 0 && daysUntil <= 3 && !isDueToday && (
                           <Badge variant="secondary">
                             {daysUntil} dia{daysUntil > 1 ? 's' : ''}
@@ -474,7 +480,7 @@ const Tasks = () => {
               {tasks.length === 0 ? "Nenhuma tarefa cadastrada" : "Nenhuma tarefa encontrada"}
             </h3>
             <p className="text-muted-foreground mb-6">
-              {tasks.length === 0 
+              {tasks.length === 0
                 ? "Comece adicionando suas primeiras tarefas para organizar seus estudos."
                 : "Tente ajustar os filtros ou criar uma nova tarefa."
               }
