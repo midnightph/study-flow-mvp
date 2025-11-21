@@ -7,17 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { User, Trash2, CheckCircle, Circle, BookOpen } from "lucide-react";
+import { User, Trash2, CheckCircle, Circle, BookOpen, Edit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
-  const { user, deleteAccount } = useAuth();
+  const { user, deleteAccount, updateUserProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState("");
 
   useEffect(() => {
     const loadData = async () => {
@@ -44,6 +49,30 @@ const Profile = () => {
 
     loadData();
   }, [user, toast]);
+
+  useEffect(() => {
+    setNewDisplayName(user?.displayName || "");
+  }, [user]);
+
+  const handleUpdateProfile = async () => {
+    if (!user || !newDisplayName.trim()) return;
+
+    try {
+      await updateUserProfile({ displayName: newDisplayName.trim() });
+      setEditDialogOpen(false);
+      toast({
+        title: "Perfil atualizado",
+        description: "Seu nome foi atualizado com sucesso",
+      });
+    } catch (error: any) {
+      console.error("Error updating profile:", error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar o perfil",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleDeleteAccount = async () => {
     if (!user) return;
@@ -97,9 +126,46 @@ const Profile = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">Nome</label>
-            <p className="text-lg">{user?.displayName || "Não informado"}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">Nome</label>
+              <p className="text-lg">{user?.displayName || "Não informado"}</p>
+            </div>
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Editar
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Editar Perfil</DialogTitle>
+                  <DialogDescription>
+                    Atualize seu nome de exibição.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="displayName">Nome</Label>
+                    <Input
+                      id="displayName"
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      placeholder="Digite seu nome"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleUpdateProfile}>
+                    Salvar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
           <div>
             <label className="text-sm font-medium text-muted-foreground">Email</label>

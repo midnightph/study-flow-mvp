@@ -18,6 +18,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (updates: { displayName?: string }) => Promise<void>;
   deleteAccount: () => Promise<void>;
 }
 
@@ -61,6 +62,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await signOut(auth);
   };
 
+  const updateUserProfile = async (updates: { displayName?: string }) => {
+    if (!user) throw new Error('No user logged in');
+    await updateProfile(user, updates);
+    // Update local state to reflect changes
+    setUser({ ...user, ...updates });
+  };
+
   const deleteAccount = async () => {
     if (!user) throw new Error('No user logged in');
 
@@ -79,6 +87,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     register,
     logout,
+    updateUserProfile,
     deleteAccount,
   };
 
